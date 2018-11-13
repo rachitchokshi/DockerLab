@@ -1,0 +1,71 @@
+version: '3.7'
+
+secrets:
+ mysql-root:
+  file: ./mysql/secrets/mysql-root
+
+services:
+ db:
+  image: mysql-lab7
+  build:
+   context: ./mysql
+  networks:
+   lab7-backend-db:
+    aliases:
+     - mysql
+  secrets:
+   - mysql-root
+  environment:
+   MYSQL_ROOT_PASSWORD_FILE: '/run/secrets/mysql-root'
+ 
+ api:
+  depends_on:
+   - db
+  image: goapi-lab7
+  build:
+   context: ./goapi
+  networks:
+   lab7-backend-db:
+    aliases:
+     - goapi-db-lab7
+   lab7-backend-api:
+    aliases:
+     - goapi-lab7
+  command: ["/go/wait.sh","mysql:3306","--","go","run","/go/src/gumball/main.go","/go/src/gumball/server.go","/go/src/gumball/types.go"]
+ kong-db:
+  image: cassandra:3
+  networks:
+   lab7-backend-api:
+    aliases:
+     - kong-db
+ kong-app:
+  depends_on:
+   - kong-db
+  image: kong-app
+  ports:
+   - "8000:8000"
+  build:
+   context: ./kong-app
+   dockerfile: ./Dockerfile
+  networks:
+   lab7-backend-api:
+    aliases:
+     - kong-app
+  environment:
+   - KONG_DATABASE=cassandra
+   - KONG_CASSANDRA_CONTACT_POINTS=kong-db
+   - KONG_PROXY_ACCESS_LOG=/dev/stdout
+   - KONG_ADMIN_ACCESS_LOG=/dev/stdout
+   - KONG_PROXY_ERROR_LOG=/dev/stderr
+   - KONG_ADMIN_ERROR_LOG=/dev/stderr
+   - KONG_ADMIN_LISTEN=0.0.0.0:8001,0.0.0.0:8444 ssl
+  entrypoint: ["/bin/sh","-c","/app/entrypoint.sh"]
+networks:
+ lab7-backend-db:
+  driver: bridge
+  attachable: true
+  name: lab7-backend-db
+ lab7-backend-api:
+  driver: bridge
+  attachable: true
+  name: lab7-backend-api
